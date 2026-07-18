@@ -65,7 +65,15 @@ input:focus{outline:2px solid var(--agua);outline-offset:1px;border-color:transp
   background:var(--agua);border-radius:7px;padding:6px 8px;min-width:46px;text-align:center}
 .trilha b{display:block;font-size:15.5px;font-family:Fraunces,serif;font-weight:600}
 .trilha small{display:block;font-size:12px;color:var(--fraca);margin-top:1px}
+.thead{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:end;
+  padding:0 14px 7px;margin-top:14px}
+.thead .h{font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--fraca);font-weight:700}
+.thead .h.c{min-width:46px;text-align:center}
+.thead .h.d{text-align:right;color:var(--sedimento)}
+.pipbox{display:flex;flex-direction:column;align-items:flex-end;gap:3px}
 .pips{display:flex;gap:2.5px}.pips i{width:5px;height:15px;border-radius:2px;background:var(--linha)}
+.pipn{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--fraca);letter-spacing:.04em}
 .pips i.f{background:var(--sedimento)}
 .tdet{margin-top:10px;padding-top:10px;border-top:1px dashed var(--linha);
   font-size:12.5px;color:var(--fraca);display:none}
@@ -191,7 +199,7 @@ tr.me td{background:#F2F7F6;font-weight:600}
     <label class="field"><span>De onde você fala</span>
       <input id="local" maxlength="26" placeholder="Cidade, escola ou instituição" autocomplete="off"></label>
 
-    <div class="trilhas" id="trilhas" role="group" aria-label="Escolha a trilha"></div>
+    <div class="thead" aria-hidden="true"><span class="h c">Cota</span><span class="h">Fase do ciclo</span><span class="h d">Nível de dificuldade</span></div><div class="trilhas" id="trilhas" role="group" aria-label="Escolha a trilha"></div>
 
     <div class="acts">
       <button class="btn p" id="bStart" disabled>Começar</button>
@@ -282,7 +290,7 @@ var BANCO={"q": {"enchente": [{"q": "O que faz o Pantanal alagar todos os anos?"
 (function(){
 "use strict";
 var FB="https://jogos-ranking-default-rtdb.firebaseio.com";
-var GAME="pulso-pantanal";
+var RANK="pulso_pantanal_ranking";
 var online=false;
 
 var TRILHAS=[
@@ -342,7 +350,8 @@ function montarTrilhas(){
     b.innerHTML=
       '<div class="tlinha"><span class="cota">'+t.cota+'</span>'+
       '<span><b>'+t.nome+'</b><small>'+t.resumo+'</small></span>'+
-      '<span class="pips" title="Nível '+t.nivel+' de 4">'+pips+'</span></div>'+
+      '<span class="pipbox"><span class="pips" title="Nível '+t.nivel+' de 4">'+pips+
+      '</span><span class="pipn">'+t.nivel+' de 4</span></span></div>'+
       '<div class="tdet"><dl>'+
       '<dt>Para quem</dt><dd>'+t.publico+'</dd>'+
       '<dt>O que cobra</dt><dd>'+t.exige+'</dd>'+
@@ -555,27 +564,33 @@ function finalizar(){
   grafTempo();grafTema();
   tela("scEnd");
   salvar();
-  buscarScores(S.trilha,function(arr){grafComp(arr.map(function(x){return x.score}))});
+  buscarScores(S.trilha,function(arr){grafComp(arr.map(function(x){return x.pts}))});
 }
 
 /* ---------- FIREBASE ---------- */
 function salvar(){
-  var reg={name:($("nome").value.trim()||"Anônimo").slice(0,20),
+  var reg={nome:($("nome").value.trim()||"Anônimo").slice(0,20),
+    pts:S.pts,
     local:($("local").value.trim()||"").slice(0,26),
-    score:S.pts,trilha:S.trilha,acertos:S.acc,total:S.fila.length,ts:Date.now()};
+    trilha:S.trilha,acertos:S.acc,total:S.fila.length,ts:Date.now()};
   S.ultimo=reg;
   if(!online){$("endSave").textContent="Sem conexão. Sua pontuação vale só nesta sessão.";return}
-  fetch(FB+"/games/"+GAME+"/scores.json",{method:"POST",
+  fetch(FB+"/"+RANK+".json",{method:"POST",
     headers:{"Content-Type":"application/json"},body:JSON.stringify(reg)})
-   .then(function(r){if(!r.ok)throw 0;$("endSave").textContent="Pontuação registrada no ranking."})
-   .catch(function(){$("endSave").textContent="Não foi possível gravar no ranking agora."});
+   .then(function(r){
+     if(!r.ok)return r.text().then(function(t){throw new Error(t||r.status)});
+     $("endSave").textContent="Pontuação registrada no ranking.";
+   })
+   .catch(function(e){
+     $("endSave").textContent="Não foi possível gravar no ranking. "+(e&&e.message?String(e.message).slice(0,90):"");
+   });
 }
 function buscarScores(filtro,cb){
   if(!online){cb([]);return}
-  fetch(FB+"/games/"+GAME+'/scores.json?orderBy="score"&limitToLast=400')
+  fetch(FB+"/"+RANK+'.json?orderBy="pts"&limitToLast=400')
    .then(function(r){return r.json()})
    .then(function(d){
-     var a=[];for(var k in d){if(d[k]&&typeof d[k].score==="number")a.push(d[k])}
+     var a=[];for(var k in d){if(d[k]&&typeof d[k].pts==="number")a.push(d[k])}
      if(filtro&&filtro!=="todas")a=a.filter(function(x){return x.trilha===filtro});
      cb(a);
    }).catch(function(){cb([])});
@@ -585,13 +600,13 @@ function carregarRanking(filtro){
   if(!online){box.innerHTML='<div class="empty">O ranking precisa de conexão. Abra o app online para comparar resultados.</div>';return}
   buscarScores(filtro,function(a){
     if(!a.length){box.innerHTML='<div class="empty">Ainda não há resultados nesta trilha. Seja o primeiro.</div>';return}
-    a.sort(function(x,y){return y.score-x.score||x.ts-y.ts});a=a.slice(0,25);
+    a.sort(function(x,y){return y.pts-x.pts||x.ts-y.ts});a=a.slice(0,25);
     var h='<table><thead><tr><th></th><th>Nome</th><th>Origem</th><th style="text-align:right">Pontos</th></tr></thead><tbody>';
     a.forEach(function(x,i){
-      var eu=S.ultimo&&x.name===S.ultimo.name&&x.score===S.ultimo.score&&x.ts===S.ultimo.ts;
-      h+='<tr class="'+(eu?"me":"")+'"><td class="pos">'+(i+1)+'</td><td>'+esc(x.name)+
+      var eu=S.ultimo&&x.nome===S.ultimo.nome&&x.pts===S.ultimo.pts&&x.ts===S.ultimo.ts;
+      h+='<tr class="'+(eu?"me":"")+'"><td class="pos">'+(i+1)+'</td><td>'+esc(x.nome)+
          '</td><td style="color:#5E6B62;font-size:13px">'+esc(x.local||"")+
-         '</td><td style="text-align:right;font-family:JetBrains Mono,monospace;font-weight:700">'+x.score+'</td></tr>';
+         '</td><td style="text-align:right;font-family:JetBrains Mono,monospace;font-weight:700">'+x.pts+'</td></tr>';
     });
     box.innerHTML=h+'</tbody></table>';
   });
